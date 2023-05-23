@@ -18,13 +18,12 @@ int main() {
 
   while ((cmdline = next_cmd(prompt, stdin)) != NULL) {
     if ((arglist = splitline(cmdline)) != NULL) {
-      // Check for pipe symbol in arglist and split command if necessary
+      // check for pipe symbol in arglist and split command if necessary
       char **pipe_cmds[2] = {NULL, NULL};
       int has_pipe = split_pipe(arglist, pipe_cmds);
 
       if (has_pipe) {
-        // We'll need to fork, create a pipe, and run execute on both sides of
-        // the pipe.
+        // fork, create a pipe, and run execute on both sides of the pipe
         int pipefd[2];
         if (pipe(pipefd) == -1) {
           perror("pipe");
@@ -43,11 +42,13 @@ int main() {
 }
 
 void setup() {
+  // interupt and quit now is ignored
   signal(SIGINT, SIG_IGN);
   signal(SIGQUIT, SIG_IGN);
 }
 
 void fatal(char *s1, char *s2, int n) {
+  // used for reporting errors and terminating the program
   fprintf(stderr, "Error: %s,%s\n", s1, s2);
   exit(n);
 }
@@ -59,31 +60,41 @@ int execute_with_pipe(char **cmd1, char **cmd2, int pipefd[2]) {
       perror("fork");
       return -1;
     case 0:
-      dup2(pipefd[1], STDOUT_FILENO);
-      close(pipefd[0]);
-      execvp(cmd1[0], cmd1);
-      perror("execute command 1");
+      // execute cmd1 and connect stdout to pipefd[1]
+      dup2(pipefd[1],
+           STDOUT_FILENO);    // redirect stdout to the writing end of the pipe
+      close(pipefd[0]);       // close the reading end of the pipe
+      execvp(cmd1[0], cmd1);  // execute cmd1
+      perror("execute command 1");  // print error if execvp fails
       return -1;
     default:
-      dup2(pipefd[0], STDIN_FILENO);
-      close(pipefd[1]);
-      execvp(cmd2[0], cmd2);
-      perror("execute command 2");
+      // execute cmd2 and connect stdin to pipefd[0]
+      dup2(pipefd[0],
+           STDIN_FILENO);     // redirect stdin to the reading end of the pipe
+      close(pipefd[1]);       // close the writing end of the pipe
+      execvp(cmd2[0], cmd2);  // execute cmd2
+      perror("execute command 2");  // print error if execvp fails
       return -1;
   }
-}
 
-int split_pipe(char **arglist, char ***pipe_cmds) {
-  int i = 0;
-  while (arglist[i] != NULL) {
-    if (strcmp(arglist[i], "|") == 0) {
-      arglist[i] = NULL;
-      pipe_cmds[0] = arglist;
-      pipe_cmds[1] = &arglist[i + 1];
-      return 1;
+  int split_pipe(char **arglist, char ***pipe_cmds) {
+    int i = 0;
+    while (arglist[i] != NULL) {
+      if (strcmp(arglist[i], "|") == 0) {
+        // found a pipe symbol split the command into two parts
+        arglist[i] = NULL;  // set the pipe symbol position to NULL
+        pipe_cmds[0] =
+            arglist;  // first part of the command is before the pipe symbol
+        pipe_cmds[1] =
+            &arglist[i +
+                     1];  // second part of the command is after the pipe symbol
+        return 1;         // indicate that a pipe symbol was found and split was
+                          // performed
+      }
+      i++;
     }
-    i++;
+    // no pipe symbol found return the entire command as a single part
+    pipe_cmds[0] = arglist;
+    return 0;  // indicate that no pipe symbol was found
   }
-  pipe_cmds[0] = arglist;
-  return 0;
 }
